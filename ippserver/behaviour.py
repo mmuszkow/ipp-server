@@ -47,15 +47,28 @@ def prepare_environment(ipp_request):
     )
     return env
 
+PRINTER_DEFAULT_UUID = '884d7c0a-f449-45a7-8bbe-095e2943d313'
+PRINTER_DEFAULT_NAME = 'Virtual Printer'
+PRINTER_DEFAULT_ADDR = ('localhost', 631)
 
 class Behaviour(object):
     """Do anything in response to IPP requests"""
     version = (1, 1)
-    base_uri = b'ipp://localhost:1234/'
-    printer_uri = b'ipp://localhost:1234/printer'
 
-    def __init__(self, ppd=BasicPostscriptPPD()):
+    def __init__(self, ppd=BasicPostscriptPPD(), server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
         self.ppd = ppd
+
+        hostname, port = server_addr
+        if hostname == '':
+            hostname = 'localhost'
+        url = hostname
+        if port != 631:
+            url += ':%d' % port
+        self.base_uri = ('ipp://%s/' % url).encode('ascii')
+        self.printer_uri = ('ipp://%s/ipp/print' % url).encode('ascii')
+
+        self.printer_name=printer_name.encode('ascii')
+        self.printer_uuid = ('urn:uuid:%s' % printer_uuid).encode('ascii')
 
     def expect_page_data_follows(self, ipp_request):
         return ipp_request.opid_or_status == OperationEnum.print_job
@@ -79,6 +92,12 @@ class AllCommandsReturnNotImplemented(Behaviour):
 
     There's no real use for this, it's just an example.
     """
+
+    def __init__(self, ppd=BasicPostscriptPPD(), server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
+        super().__init__(
+            ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
+        )
+
     def get_handle_command_function(self, _opid_or_status):
         return self.operation_not_implemented_response
 
@@ -97,6 +116,11 @@ class StatelessPrinter(Behaviour):
     The printer calls handle_postscript() for each print job.
     It says all print jobs succeed immediately: there are some stub functions like create_job() which subclasses could use to keep track of jobs, eg: if operation_get_jobs_response wants to return something sensible.
     """
+
+    def __init__(self, ppd=BasicPostscriptPPD(), server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
+        super().__init__(
+            ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
+        )
 
     def get_handle_command_function(self, opid_or_status):
         commands = {
@@ -225,17 +249,17 @@ class StatelessPrinter(Behaviour):
                 SectionEnum.printer,
                 b'printer-name',
                 TagEnum.name_without_language
-            ): [b'ipp-printer.py'],
+            ): [self.printer_name],
             (
                 SectionEnum.printer,
                 b'printer-info',
                 TagEnum.text_without_language
-            ): [b'Printer using ipp-printer.py'],
+            ): [b'Virtual Printer'],
             (
                 SectionEnum.printer,
                 b'printer-make-and-model',
                 TagEnum.text_without_language
-            ): [b'h2g2bob\'s ipp-printer.py 0.00'],
+            ): [b'Virtual Printer'],
             (
                 SectionEnum.printer,
                 b'printer-state',
@@ -324,6 +348,21 @@ class StatelessPrinter(Behaviour):
                 b'compression-supported',
                 TagEnum.keyword
             ): [b'none'],
+            (
+                SectionEnum.printer,
+                b'media-supported',
+                TagEnum.keyword
+            ): [b'iso_a4_210x297mm'],
+            (
+                SectionEnum.printer,
+                b'media-default',
+                TagEnum.keyword
+            ): [b'iso_a4_210x297mm'],
+            (
+                SectionEnum.printer,
+                b'printer-uuid',
+                TagEnum.uri
+            ): [self.printer_uuid]
         }
         attr.update(self.minimal_attributes())
         return attr
@@ -429,6 +468,11 @@ class RejectAllPrinter(StatelessPrinter):
         send ipp aborted
     """
 
+    def __init__(self, ppd=BasicPostscriptPPD(), server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
+        super().__init__(
+            ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
+        )
+
     def operation_print_job_response(self, req, _psfile):
         job_id = self.create_job(req)
         attributes = self.print_job_attributes(
@@ -453,7 +497,7 @@ class RejectAllPrinter(StatelessPrinter):
 
 
 class SaveFilePrinter(StatelessPrinter):
-    def __init__(self, directory, filename_ext):
+    def __init__(self, directory, filename_ext, server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
         self.directory = directory
         self.filename_ext = filename_ext
 
@@ -462,7 +506,9 @@ class SaveFilePrinter(StatelessPrinter):
             'pdf': BasicPdfPPD(),
         }[filename_ext]
 
-        super(SaveFilePrinter, self).__init__(ppd=ppd)
+        super().__init__(
+            ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
+        )
 
     def handle_postscript(self, ipp_request, postscript_file):
         filename = self.filename(ipp_request)
@@ -485,11 +531,11 @@ class SaveFilePrinter(StatelessPrinter):
 
 
 class SaveAndRunPrinter(SaveFilePrinter):
-    def __init__(self, directory, use_env, filename_ext, command):
+    def __init__(self, directory, use_env, filename_ext, command, server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
         self.command = command
         self.use_env = use_env
-        super(SaveAndRunPrinter, self).__init__(
-            directory=directory, filename_ext=filename_ext
+        super().__init__(
+            directory=directory, filename_ext=filename_ext, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
         )
 
     def run_after_saving(self, filename, ipp_request):
@@ -506,7 +552,7 @@ class SaveAndRunPrinter(SaveFilePrinter):
 
 
 class RunCommandPrinter(StatelessPrinter):
-    def __init__(self, command, use_env, filename_ext):
+    def __init__(self, command, use_env, filename_ext, server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
         self.command = command
         self.use_env = use_env
 
@@ -515,7 +561,9 @@ class RunCommandPrinter(StatelessPrinter):
             'pdf': BasicPdfPPD(),
         }[filename_ext]
 
-        super(RunCommandPrinter, self).__init__(ppd=ppd)
+        super().__init__(
+            ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
+        )
 
     def handle_postscript(self, ipp_request, postscript_file):
         logging.info('Running command for job')
@@ -534,7 +582,7 @@ class RunCommandPrinter(StatelessPrinter):
 
 
 class PostageServicePrinter(StatelessPrinter):
-    def __init__(self, service_api, filename_ext):
+    def __init__(self, service_api, filename_ext, server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
         self.service_api = service_api
         self.filename_ext = filename_ext
 
@@ -543,7 +591,9 @@ class PostageServicePrinter(StatelessPrinter):
             'pdf': BasicPdfPPD(),
         }[filename_ext]
 
-        super(PostageServicePrinter, self).__init__(ppd=ppd)
+        super().__init__(
+            ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
+        )
 
     def handle_postscript(self, _ipp_request, postscript_file):
         filename = b'ipp-server-{}.{}'.format(
