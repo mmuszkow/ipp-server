@@ -61,7 +61,7 @@ class BasicPdfPPD(BasicPostscriptPPD):
     model = 'ipp-server-pdf'
 
     def text(self):
-        return super(BasicPdfPPD, self).text() + b'''
+        return super().text() + b'''
 *% The printer can only handle PDF files, so get CUPS to send that
 *% https://en.wikipedia.org/wiki/CUPS#Filter_system
 *% https://www.cups.org/doc/spec-ppd.html

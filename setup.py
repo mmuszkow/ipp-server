@@ -13,7 +13,7 @@ setup(
       license="BSD2",
       description='An IPP server which acts like a printer',
       long_description='A module which implements enough of IPP to fool CUPS into thinking it is a real printer.',
-      version='0.2',
+      version='0.3',
       url='http://github.com/h2g2bob/ipp-server',
       packages=find_packages(exclude=["tests"]),
       test_suite="tests.test_request",
