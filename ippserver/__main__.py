@@ -22,7 +22,10 @@ def parse_args(args=None):
     parser = argparse.ArgumentParser(description='An IPP server')
     parser.add_argument('-v', '--verbose', action='count', help='Add debugging')
     parser.add_argument('-H', '--host', type=str, default='localhost', metavar='HOST', help='Address to listen on')
+    parser.add_argument('-f', '--hostname', type=str, default='localhost', metavar='HOSTNAME', help='Hostname that will be included in printer\'s URI')
     parser.add_argument('-p', '--port', type=int, required=True, metavar='PORT', help='Port to listen on')
+    parser.add_argument('-u', '--uuid', type=str, default='884d7c0a-f449-45a7-8bbe-095e2943d313', metavar='UUID', help='Printer UUID')
+    parser.add_argument('-n', '--name', type=str, default='Virtual Printer', metavar='NAME', help='Printer name')
 
     parser_action = parser.add_subparsers(help='Actions', dest='action')
 
@@ -57,28 +60,44 @@ def behaviour_from_parsed_args(args):
     if args.action == 'save':
         return behaviour.SaveFilePrinter(
             directory=args.directory,
-            filename_ext='pdf' if args.pdf else 'ps')
+            filename_ext='pdf' if args.pdf else 'ps',
+            server_addr=(args.hostname, args.port),
+            printer_name=args.name,
+            printer_uuid=args.uuid)
     if args.action == 'run':
         return behaviour.RunCommandPrinter(
             command=args.command,
             use_env=args.env,
-            filename_ext='pdf' if args.pdf else 'ps')
+            filename_ext='pdf' if args.pdf else 'ps',
+            server_addr=(args.hostname, args.port),
+            printer_name=args.name,
+            printer_uuid=args.uuid)
     if args.action == 'saveandrun':
         return behaviour.SaveAndRunPrinter(
             command=args.command,
             use_env=args.env,
             directory=args.directory,
-            filename_ext='pdf' if args.pdf else 'ps')
+            filename_ext='pdf' if args.pdf else 'ps',
+            server_addr=(args.hostname, args.port),
+            printer_name=args.name,
+            printer_uuid=args.uuid)
     if args.action == 'pc2paper':
         pc2paper_config = Pc2Paper.from_config_file(args.config)
         return behaviour.PostageServicePrinter(
             service_api=pc2paper_config,
-            filename_ext='pdf' if args.pdf else 'ps')
+            filename_ext='pdf' if args.pdf else 'ps',
+            server_addr=(args.hostname, args.port),
+            printer_name=args.name,
+            printer_uuid=args.uuid)
     if args.action == 'load':
         module, name = args.path[0].rsplit(".", 1)
         return getattr(importlib.import_module(module), name)(*args.command)
     if args.action == 'reject':
-        return behaviour.RejectAllPrinter()
+        return behaviour.RejectAllPrinter(
+            server_addr=(args.hostname, args.port),
+            printer_name=args.name,
+            printer_uuid=args.uuid)
+
     raise RuntimeError(args)
 
 
