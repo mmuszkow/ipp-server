@@ -19,10 +19,6 @@ import os.path
 from . import request
 
 
-def local_file_location(filename):
-    return os.path.join(os.path.dirname(__file__), 'data', filename)
-
-
 def _get_next_chunk(rfile):
     while True:
         chunk_size_s = rfile.readline()
@@ -108,8 +104,7 @@ class IPPRequestHandler(BaseHTTPRequestHandler):
             self.send_headers(
                 status=200, content_type='text/plain'
             )
-            with open(local_file_location('homepage.txt'), 'rb') as wwwfile:
-                self.wfile.write(wwwfile.read())
+            self.wfile.write(b'IPP server is running ...')
         elif self.path.endswith('.ppd'):
             self.send_headers(
                 status=200, content_type='text/plain'
@@ -119,8 +114,7 @@ class IPPRequestHandler(BaseHTTPRequestHandler):
             self.send_headers(
                 status=404, content_type='text/plain'
             )
-            with open(local_file_location('404.txt'), 'rb') as wwwfile:
-                self.wfile.write(wwwfile.read())
+            self.wfile.write(b'404 Not Found')
 
     def handle_expect_100(self):
         """ Disable """

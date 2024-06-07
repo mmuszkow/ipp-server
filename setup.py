@@ -17,9 +17,6 @@ setup(
       url='http://github.com/h2g2bob/ipp-server',
       packages=find_packages(exclude=["tests"]),
       test_suite="tests.test_request",
-      package_data={
-        'ippserver': ['data/*'],
-      },
       classifiers=[
         'Intended Audience :: Developers',
         'License :: OSI Approved :: BSD License',
