@@ -31,9 +31,9 @@ def get_job_id(req):
         ).integer
 
 
-def read_in_blocks(postscript_file):
+def read_in_blocks(data_file):
     while True:
-        block = postscript_file.read(1024)
+        block = data_file.read(1024)
         if block == b'':
             break
         else:
@@ -73,7 +73,7 @@ class Behaviour(object):
     def expect_page_data_follows(self, ipp_request):
         return ipp_request.opid_or_status == OperationEnum.print_job
 
-    def handle_ipp(self, ipp_request, postscript_file):
+    def handle_ipp(self, ipp_request, data_file):
         command_function = self.get_handle_command_function(
             ipp_request.opid_or_status
         )
@@ -81,7 +81,7 @@ class Behaviour(object):
             'IPP %r -> %s.%s', ipp_request.opid_or_status, type(self).__name__,
             command_function.__name__
         )
-        return command_function(ipp_request, postscript_file)
+        return command_function(ipp_request, data_file)
 
     def get_handle_command_function(self, opid_or_status):
         raise NotImplementedError()
@@ -113,7 +113,7 @@ class AllCommandsReturnNotImplemented(Behaviour):
 class StatelessPrinter(Behaviour):
     """A minimal printer which implements all the things a printer needs to work.
 
-    The printer calls handle_postscript() for each print job.
+    The printer calls handle_data() for each print job.
     It says all print jobs succeed immediately: there are some stub functions like create_job() which subclasses could use to keep track of jobs, eg: if operation_get_jobs_response wants to return something sensible.
     """
 
@@ -178,13 +178,13 @@ class StatelessPrinter(Behaviour):
             req.request_id,
             attributes)
 
-    def operation_print_job_response(self, req, psfile):
+    def operation_print_job_response(self, req, data_file):
         job_id = self.create_job(req)
         attributes = self.print_job_attributes(
             job_id, JobStateEnum.pending,
             [b'job-incoming', b'job-data-insufficient']
         )
-        self.handle_postscript(req, psfile)
+        self.handle_data(req, data_file)
         return IppRequest(
             self.version,
             StatusCodeEnum.ok,
@@ -322,7 +322,7 @@ class StatelessPrinter(Behaviour):
                 SectionEnum.printer,
                 b'document-format-supported',
                 TagEnum.mime_media_type
-            ): [b'application/pdf'],
+            ): [b'application/pdf', b'application/postscript'],
             (
                 SectionEnum.printer,
                 b'printer-is-accepting-jobs',
@@ -445,7 +445,7 @@ class StatelessPrinter(Behaviour):
         """
         return random.randint(1,9999)
 
-    def handle_postscript(self, ipp_request, postscript_file):
+    def handle_data(self, ipp_request, data_file):
         raise NotImplementedError
 
 
@@ -497,45 +497,39 @@ class RejectAllPrinter(StatelessPrinter):
 
 
 class SaveFilePrinter(StatelessPrinter):
-    def __init__(self, directory, filename_ext, server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
+    def __init__(self, directory, ppd=BasicPostscriptPPD(), server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
         self.directory = directory
-        self.filename_ext = filename_ext
-
-        ppd = {
-            'ps': BasicPostscriptPPD(),
-            'pdf': BasicPdfPPD(),
-        }[filename_ext]
-
         super().__init__(
             ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
         )
 
-    def handle_postscript(self, ipp_request, postscript_file):
-        filename = self.filename(ipp_request)
+    def detect_extension(self, data):
+        if data.startswith(b'%!PS-'):
+            return 'ps'
+        if data.startswith(b'%PDF-'):
+            return 'pdf'
+        return 'bin'
+
+    def handle_data(self, ipp_request, data_file):
+        data = b''.join(read_in_blocks(data_file))
+        filename = 'ipp-server-print-job-%s.%s' % (uuid.uuid1(), self.detect_extension(data))
         logging.info('Saving print job as %r', filename)
-        with open(filename, 'wb') as diskfile:
-            for block in read_in_blocks(postscript_file):
-                diskfile.write(block)
+
+        filepath = os.path.join(self.directory, filename)
+        with open(filepath, 'wb') as diskfile:
+            diskfile.write(data)
+
         self.run_after_saving(filename, ipp_request)
 
     def run_after_saving(self, filename, ipp_request):
         pass
 
-    def filename(self, ipp_request):
-        leaf = self.leaf_filename(ipp_request)
-        return os.path.join(self.directory, leaf)
-
-    def leaf_filename(self, _ipp_request):
-        # Possibly use the job name from the ipp_request?
-        return 'ipp-server-print-job-%s.%s' % (uuid.uuid1(), self.filename_ext)
-
-
 class SaveAndRunPrinter(SaveFilePrinter):
-    def __init__(self, directory, use_env, filename_ext, command, server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
+    def __init__(self, directory, use_env, command, ppd=BasicPostscriptPPD(), server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
         self.command = command
         self.use_env = use_env
         super().__init__(
-            directory=directory, filename_ext=filename_ext, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
+            directory=directory, ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
         )
 
     def run_after_saving(self, filename, ipp_request):
@@ -552,26 +546,20 @@ class SaveAndRunPrinter(SaveFilePrinter):
 
 
 class RunCommandPrinter(StatelessPrinter):
-    def __init__(self, command, use_env, filename_ext, server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
+    def __init__(self, command, use_env, ppd=BasicPostscriptPPD(), server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
         self.command = command
         self.use_env = use_env
-
-        ppd = {
-            'ps': BasicPostscriptPPD(),
-            'pdf': BasicPdfPPD(),
-        }[filename_ext]
-
         super().__init__(
             ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
         )
 
-    def handle_postscript(self, ipp_request, postscript_file):
+    def handle_data(self, ipp_request, data_file):
         logging.info('Running command for job')
         proc = subprocess.Popen(
             self.command,
             env=prepare_environment(ipp_request) if self.use_env else None,
             stdin=subprocess.PIPE)
-        data = b''.join(read_in_blocks(postscript_file))
+        data = b''.join(read_in_blocks(data_file))
         proc.communicate(data)
         if proc.returncode:
             raise RuntimeError(
@@ -582,22 +570,15 @@ class RunCommandPrinter(StatelessPrinter):
 
 
 class PostageServicePrinter(StatelessPrinter):
-    def __init__(self, service_api, filename_ext, server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
+    def __init__(self, service_api, ppd=BasicPostscriptPPD(), server_addr=PRINTER_DEFAULT_ADDR, printer_name=PRINTER_DEFAULT_NAME, printer_uuid=PRINTER_DEFAULT_UUID):
         self.service_api = service_api
-        self.filename_ext = filename_ext
-
-        ppd = {
-            'ps': BasicPostscriptPPD(),
-            'pdf': BasicPdfPPD(),
-        }[filename_ext]
-
         super().__init__(
             ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
         )
 
-    def handle_postscript(self, _ipp_request, postscript_file):
+    def handle_data(self, _ipp_request, data_file):
+        data = b''.join(read_in_blocks(data_file))
         filename = b'ipp-server-{}.{}'.format(
             int(time.time()),
-            self.filename_ext)
-        data = b''.join(read_in_blocks(postscript_file))
+            self.detect_extension(data))
         self.service_api.post_pdf_letter(filename, data)

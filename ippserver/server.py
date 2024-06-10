@@ -127,12 +127,12 @@ class IPPRequestHandler(BaseHTTPRequestHandler):
             self.send_headers(
                 status=100, content_type='application/ipp'
             )
-            postscript_file = self.rfile
+            data_file = self.rfile
         else:
-            postscript_file = None
+            data_file = None
 
         ipp_response = self.server.behaviour.handle_ipp(
-            self.ipp_request, postscript_file
+            self.ipp_request, data_file
         ).to_string()
         self.send_headers(
             status=200, content_type='application/ipp',
