@@ -14,7 +14,7 @@ __package__ = "ippserver"
 from . import behaviour
 from .pc2paper import Pc2Paper
 from .server import run_server, IPPServer, IPPRequestHandler
-
+from .ppd import BasicPostscriptPPD, BasicPdfPPD
 
 def parse_args(args=None):
     pdf_help = 'Request that CUPs sends the document as a PDF file, instead of a PS file. CUPs detects this setting when ADDING a printer: you may need to re-add the printer on a different port'
@@ -60,34 +60,34 @@ def behaviour_from_parsed_args(args):
     if args.action == 'save':
         return behaviour.SaveFilePrinter(
             directory=args.directory,
-            filename_ext='pdf' if args.pdf else 'ps',
             uri=args.uri,
             name=args.name,
+            ppd=BasicPdfPPD() if args.pdf else BasicPostscriptPPD(),
             printer_uuid=args.uuid)
     if args.action == 'run':
         return behaviour.RunCommandPrinter(
             command=args.command,
             use_env=args.env,
-            filename_ext='pdf' if args.pdf else 'ps',
             uri=args.uri,
             name=args.name,
+            ppd=BasicPdfPPD() if args.pdf else BasicPostscriptPPD(),
             printer_uuid=args.uuid)
     if args.action == 'saveandrun':
         return behaviour.SaveAndRunPrinter(
             command=args.command,
             use_env=args.env,
             directory=args.directory,
-            filename_ext='pdf' if args.pdf else 'ps',
             uri=args.uri,
             name=args.name,
+            ppd=BasicPdfPPD() if args.pdf else BasicPostscriptPPD(),
             printer_uuid=args.uuid)
     if args.action == 'pc2paper':
         pc2paper_config = Pc2Paper.from_config_file(args.config)
         return behaviour.PostageServicePrinter(
             service_api=pc2paper_config,
-            filename_ext='pdf' if args.pdf else 'ps',
             uri=args.uri,
             name=args.name,
+            ppd=BasicPdfPPD() if args.pdf else BasicPostscriptPPD(),
             printer_uuid=args.uuid)
     if args.action == 'load':
         module, name = args.path[0].rsplit(".", 1)
