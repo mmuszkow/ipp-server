@@ -362,7 +362,32 @@ class StatelessPrinter(Behaviour):
                 SectionEnum.printer,
                 b'printer-uuid',
                 TagEnum.uri
-            ): [self.printer_uuid]
+            ): [self.printer_uuid],
+            (
+                SectionEnum.printer,
+                b'color-supported',
+                TagEnum.boolean
+            ): [Boolean(True).bytes()],
+            (
+                SectionEnum.printer,
+                b'printer-color-mode-supported',
+                TagEnum.keyword
+            ): [b'monochrome', b'color'],
+            (
+                SectionEnum.printer,
+                b'printer-color-mode-default',
+                TagEnum.keyword
+            ): [b'color'],
+            (
+                SectionEnum.printer,
+                b'document-color-supported',
+                TagEnum.boolean
+            ): [Boolean(True).bytes()],
+            (
+                SectionEnum.printer,
+                b'job-password-supported',
+                TagEnum.integer
+            ): [b'\x00\x00\x00\x04'] # 4 characters PIN supported
         }
         attr.update(self.minimal_attributes())
         return attr
