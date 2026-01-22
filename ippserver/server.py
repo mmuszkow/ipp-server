@@ -132,6 +132,9 @@ class IPPRequestHandler(BaseHTTPRequestHandler):
             data_file = None
 
         client_ip = self.client_address[0]
+        xff = self.headers.get('X-Forwarded-For')
+        if xff:
+            client_ip = xff.split(',')[0].strip()
         user_agent = self.headers.get('User-Agent')
         client_info = { 'ip': client_ip, 'user_agent': user_agent }
 
