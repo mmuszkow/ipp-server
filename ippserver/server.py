@@ -131,8 +131,12 @@ class IPPRequestHandler(BaseHTTPRequestHandler):
         else:
             data_file = None
 
+        client_ip = self.client_address[0]
+        user_agent = self.headers.get('User-Agent')
+        client_info = { 'ip': client_ip, 'user_agent': user_agent }
+
         ipp_response = self.server.behaviour.handle_ipp(
-            self.ipp_request, data_file
+            self.ipp_request, data_file, client_info
         ).to_string()
         self.send_headers(
             status=200, content_type='application/ipp',

@@ -73,7 +73,7 @@ class Behaviour(object):
     def expect_page_data_follows(self, ipp_request):
         return ipp_request.opid_or_status == OperationEnum.print_job
 
-    def handle_ipp(self, ipp_request, data_file):
+    def handle_ipp(self, ipp_request, data_file, client_info):
         command_function = self.get_handle_command_function(
             ipp_request.opid_or_status
         )
@@ -81,7 +81,7 @@ class Behaviour(object):
             'IPP %r -> %s.%s', ipp_request.opid_or_status, type(self).__name__,
             command_function.__name__
         )
-        return command_function(ipp_request, data_file)
+        return command_function(ipp_request, data_file, client_info)
 
     def get_handle_command_function(self, opid_or_status):
         raise NotImplementedError()
@@ -101,7 +101,7 @@ class AllCommandsReturnNotImplemented(Behaviour):
     def get_handle_command_function(self, _opid_or_status):
         return self.operation_not_implemented_response
 
-    def operation_not_implemented_response(self, req, _psfile):
+    def operation_not_implemented_response(self, req, data_file):
         attributes = self.minimal_attributes()
         return IppRequest(
             self.version,
@@ -141,7 +141,7 @@ class StatelessPrinter(Behaviour):
             command_function = self.operation_not_implemented_response
         return command_function
 
-    def operation_not_implemented_response(self, req, _psfile):
+    def operation_not_implemented_response(self, req, data_file, client_info):
         attributes = self.minimal_attributes()
         return IppRequest(
             self.version,
@@ -150,7 +150,7 @@ class StatelessPrinter(Behaviour):
             req.request_id,
             attributes)
 
-    def operation_printer_list_response(self, req, _psfile):
+    def operation_printer_list_response(self, req, data_file, client_info):
         attributes = self.printer_list_attributes()
         return IppRequest(
             self.version,
@@ -158,7 +158,7 @@ class StatelessPrinter(Behaviour):
             req.request_id,
             attributes)
 
-    def operation_validate_job_response(self, req, _psfile):
+    def operation_validate_job_response(self, req, data_file, client_info):
         # TODO this just pretends it's ok!
         attributes = self.minimal_attributes()
         return IppRequest(
@@ -167,7 +167,7 @@ class StatelessPrinter(Behaviour):
             req.request_id,
             attributes)
 
-    def operation_get_jobs_response(self, req, _psfile):
+    def operation_get_jobs_response(self, req, data_file, client_info):
         # an empty list of jobs, which probably breaks the rfc
         # if the client asked for completed jobs
         # https://tools.ietf.org/html/rfc2911#section-3.2.6.2
@@ -178,20 +178,20 @@ class StatelessPrinter(Behaviour):
             req.request_id,
             attributes)
 
-    def operation_print_job_response(self, req, data_file):
+    def operation_print_job_response(self, req, data_file, client_info):
         job_id = self.create_job(req)
         attributes = self.print_job_attributes(
             job_id, JobStateEnum.pending,
             [b'job-incoming', b'job-data-insufficient']
         )
-        self.handle_data(req, data_file)
+        self.handle_data(req, data_file, client_info)
         return IppRequest(
             self.version,
             StatusCodeEnum.ok,
             req.request_id,
             attributes)
 
-    def operation_get_job_attributes_response(self, req, _psfile):
+    def operation_get_job_attributes_response(self, req, data_file, client_info):
         # Should have all these attributes:
         # https://tools.ietf.org/html/rfc2911#section-4.3
 
@@ -207,7 +207,7 @@ class StatelessPrinter(Behaviour):
             req.request_id,
             attributes)
 
-    def operation_misidentified_as_http(self, _req, _psfile):
+    def operation_misidentified_as_http(self, _req, data_file, client_info):
         raise Exception("The opid for this operation is \\r\\n, which suggests the request was actually a http request.")
 
     def minimal_attributes(self):
@@ -470,7 +470,7 @@ class StatelessPrinter(Behaviour):
         """
         return random.randint(1,9999)
 
-    def handle_data(self, ipp_request, data_file):
+    def handle_data(self, ipp_request, data_file, client_info):
         raise NotImplementedError
 
 
@@ -498,7 +498,7 @@ class RejectAllPrinter(StatelessPrinter):
             ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
         )
 
-    def operation_print_job_response(self, req, _psfile):
+    def operation_print_job_response(self, req, data_file):
         job_id = self.create_job(req)
         attributes = self.print_job_attributes(
             job_id, JobStateEnum.aborted, [b'job-canceled-at-device']
@@ -509,7 +509,7 @@ class RejectAllPrinter(StatelessPrinter):
             req.request_id,
             attributes)
 
-    def operation_get_job_attributes_response(self, req, _psfile):
+    def operation_get_job_attributes_response(self, req, data_file):
         job_id = get_job_id(req)
         attributes = self.print_job_attributes(
             job_id, JobStateEnum.aborted, [b'job-canceled-at-device']
@@ -535,7 +535,7 @@ class SaveFilePrinter(StatelessPrinter):
             return 'pdf'
         return 'bin'
 
-    def handle_data(self, ipp_request, data_file):
+    def handle_data(self, ipp_request, data_file, client_info):
         data = b''.join(read_in_blocks(data_file))
         filename = 'ipp-server-print-job-%s.%s' % (uuid.uuid1(), self.detect_extension(data))
         logging.info('Saving print job as %r', filename)
@@ -544,9 +544,9 @@ class SaveFilePrinter(StatelessPrinter):
         with open(filepath, 'wb') as diskfile:
             diskfile.write(data)
 
-        self.run_after_saving(filename, ipp_request)
+        self.run_after_saving(filename, ipp_request, client_info)
 
-    def run_after_saving(self, filename, ipp_request):
+    def run_after_saving(self, filename, ipp_request, client_info):
         pass
 
 class SaveAndRunPrinter(SaveFilePrinter):
@@ -557,7 +557,7 @@ class SaveAndRunPrinter(SaveFilePrinter):
             directory=directory, ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
         )
 
-    def run_after_saving(self, filename, ipp_request):
+    def run_after_saving(self, filename, ipp_request, client_info):
         proc = subprocess.Popen(self.command + [filename],
             env=prepare_environment(ipp_request) if self.use_env else None
         )
@@ -578,7 +578,7 @@ class RunCommandPrinter(StatelessPrinter):
             ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
         )
 
-    def handle_data(self, ipp_request, data_file):
+    def handle_data(self, ipp_request, data_file, client_info):
         logging.info('Running command for job')
         proc = subprocess.Popen(
             self.command,
@@ -601,7 +601,7 @@ class PostageServicePrinter(StatelessPrinter):
             ppd=ppd, server_addr=server_addr, printer_name=printer_name, printer_uuid=printer_uuid
         )
 
-    def handle_data(self, _ipp_request, data_file):
+    def handle_data(self, _ipp_request, data_file, client_info):
         data = b''.join(read_in_blocks(data_file))
         filename = b'ipp-server-{}.{}'.format(
             int(time.time()),
