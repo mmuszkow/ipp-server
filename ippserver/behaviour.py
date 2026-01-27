@@ -352,7 +352,7 @@ class StatelessPrinter(Behaviour):
                 SectionEnum.printer,
                 b'media-supported',
                 TagEnum.keyword
-            ): [b'iso_a4_210x297mm'],
+            ): [b'iso_a4_210x297mm', b'iso_a3_297x420mm'],
             (
                 SectionEnum.printer,
                 b'media-default',
@@ -363,6 +363,16 @@ class StatelessPrinter(Behaviour):
                 b'printer-uuid',
                 TagEnum.uri
             ): [self.printer_uuid],
+            (
+                SectionEnum.printer,
+                b'sides-supported',
+                TagEnum.keyword
+            ): [b'one-sided', b'two-sided-long-edge', b'two-sided-short-edge'],
+            (
+                SectionEnum.printer,
+                b'sides-default',
+                TagEnum.keyword
+            ): [b'two-sided-long-edge'],
             (
                 SectionEnum.printer,
                 b'color-supported',
